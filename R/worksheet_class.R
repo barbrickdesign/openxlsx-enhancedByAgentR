@@ -55,6 +55,7 @@ WorkSheet$methods(initialize = function(showGridLines = TRUE,
   sheetFormatPr <<- '<sheetFormatPr defaultRowHeight="15.0"/>'
   cols <<- character(0)
   
+  sheetProtection <<- character(0)
   autoFilter <<- character(0)
   mergeCells <<- character(0)
   conditionalFormatting <<- character(0)
@@ -126,6 +127,9 @@ WorkSheet$methods(get_post_sheet_data = function(){
   
   
   xml <- ""
+  
+  if(length(sheetProtection) > 0)
+    xml <- paste0(xml, sheetProtection, collapse = "")
   
   if(length(autoFilter) > 0)
     xml <- paste0(xml, autoFilter, collapse = "")
