@@ -1,5 +1,19 @@
 
-openxlsx 4.0.26
+openxlsx 4.1.0
+----------------------------------------------------------------
+
+NEW FEATURES
+
+* deleteNamedRegions: delete named regions from a workbook, optionally
+  removing the underlying cell data.
+
+* col2int: convert Excel column letter(s) to integer index (inverse of
+  int2col).
+
+* protectWorksheet / unprotectWorksheet: protect a worksheet with optional
+  password support and per-feature lock controls.
+
+
 ----------------------------------------------------------------
 
 NEW FEATURES

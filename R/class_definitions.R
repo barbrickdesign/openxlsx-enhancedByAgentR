@@ -114,6 +114,7 @@ WorkSheet <- setRefClass("WorkSheet",
                                     
                                     "sheet_data" = "Sheet_Data",
                                     
+                                    "sheetProtection" = "character",
                                     "autoFilter" = "character",
                                     "mergeCells" = "ANY",
                                     "conditionalFormatting" = "character",

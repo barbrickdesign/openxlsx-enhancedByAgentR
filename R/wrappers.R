@@ -3806,3 +3806,269 @@ removeTable <- function(wb, sheet, table){
   
   
 }
+
+
+
+
+#' @name deleteNamedRegions
+#' @title Delete named regions from a workbook
+#' @description Delete named regions from a Workbook object. Optionally also
+#'   removes the data from the underlying worksheet cells.
+#' @param wb A Workbook object.
+#' @param name A character vector of named region names to delete.
+#' @param delete_data If \code{TRUE}, also deletes the cell data for the named region.
+#' @return invisible(0)
+#' @seealso \code{\link{createNamedRegion}} \code{\link{getNamedRegions}}
+#' @export
+#' @examples
+#' wb <- createWorkbook()
+#' addWorksheet(wb, "Sheet 1")
+#' writeData(wb, sheet = 1, x = iris, startCol = 1, startRow = 1)
+#' createNamedRegion(wb, sheet = 1, name = "iris",
+#'                   rows = 1:(nrow(iris) + 1), cols = 1:ncol(iris))
+#'
+#' getNamedRegions(wb)
+#'
+#' deleteNamedRegions(wb, name = "iris")
+#'
+#' ## named region is now gone
+#' getNamedRegions(wb)
+deleteNamedRegions <- function(wb, name, delete_data = FALSE) {
+  
+  if(!"Workbook" %in% class(wb))
+    stop("First argument must be a Workbook.")
+  
+  if(!is.character(name))
+    stop("name must be a character vector.")
+  
+  dn <- wb$workbook$definedNames
+  if(length(dn) == 0)
+    stop("Workbook has no named regions.")
+  
+  ## extract names from XML strings
+  ex_names <- regmatches(dn, regexpr('(?<=name=")[^"]+', dn, perl = TRUE))
+  if(length(ex_names) == 0)
+    stop("Workbook has no named regions.")
+  ex_names_lower <- tolower(replaceXMLEntities(ex_names))
+  
+  ## match against requested names (case-insensitive)
+  to_delete <- tolower(name)
+  not_found <- to_delete[!to_delete %in% ex_names_lower]
+  if(length(not_found) > 0)
+    stop(sprintf("Named region(s) not found: %s", paste(not_found, collapse = ", ")))
+  
+  inds <- which(ex_names_lower %in% to_delete)
+  
+  if(delete_data) {
+    regions <- get_named_regions_from_string(dn[inds])
+    sheets_in_region <- attr(regions, "sheet")
+    positions <- attr(regions, "position")
+    for(i in seq_along(regions)) {
+      sheet_idx <- which(wb$sheet_names == sheets_in_region[i])
+      if(length(sheet_idx) == 0) next
+      pos_parts <- strsplit(positions[i], split = ":", fixed = TRUE)[[1]]
+      if(length(pos_parts) == 2) {
+        ref1 <- pos_parts[1]
+        ref2 <- pos_parts[2]
+      } else {
+        ref1 <- ref2 <- pos_parts[1]
+      }
+      col1 <- convertFromExcelRef(ref1)
+      col2 <- convertFromExcelRef(ref2)
+      row1 <- as.integer(gsub("[A-Z]", "", toupper(ref1)))
+      row2 <- as.integer(gsub("[A-Z]", "", toupper(ref2)))
+      if(is.na(col1) || is.na(col2) || is.na(row1) || is.na(row2)) next
+      deleteData(wb = wb, sheet = sheet_idx,
+                 cols = seq(col1, col2), rows = seq(row1, row2),
+                 gridExpand = TRUE)
+    }
+  }
+  
+  wb$workbook$definedNames <- dn[-inds]
+  
+  invisible(0)
+}
+
+
+
+
+#' @name col2int
+#' @title Convert Excel column letter(s) to integer
+#' @description Converts Excel column letter(s) to an integer index.
+#'   This is the inverse of \code{\link{int2col}}.
+#' @param col A character vector of Excel column labels (e.g. "A", "B", "AA").
+#' @return An integer vector of column indices.
+#' @export
+#' @seealso \code{\link{int2col}} \code{\link{convertFromExcelRef}}
+#' @examples
+#' col2int("A")   ## 1
+#' col2int("Z")   ## 26
+#' col2int("AA")  ## 27
+#' col2int(c("A", "B", "Z", "AA", "AB"))
+col2int <- function(col) {
+  
+  if(!is.character(col))
+    stop("col must be a character vector of Excel column labels.")
+  
+  col <- toupper(trimws(col))
+  if(any(!grepl("^[A-Z]+$", col)))
+    stop("col must contain only letters (e.g. \"A\", \"AB\").")
+  
+  convertFromExcelRef(col)
+}
+
+
+
+
+#' @name protectWorksheet
+#' @title Protect a worksheet
+#' @description Protect a worksheet in a workbook, optionally with a password,
+#'   to prevent unintended modifications. Use \code{protect = FALSE} or
+#'   \code{\link{unprotectWorksheet}} to remove protection.
+#' @param wb A Workbook object.
+#' @param sheet A name or index of a worksheet.
+#' @param protect If \code{TRUE} (default), worksheet protection is applied.
+#'   If \code{FALSE}, protection is removed (equivalent to
+#'   \code{\link{unprotectWorksheet}}).
+#' @param password An optional password string. If \code{NULL} (default), the
+#'   sheet is protected without a password requirement.
+#' @param lockSelectingLockedCells If \code{TRUE} (default), users cannot select
+#'   locked cells.
+#' @param lockSelectingUnlockedCells If \code{FALSE} (default), users can select
+#'   unlocked cells.
+#' @param lockFormatCells If \code{TRUE} (default), formatting cells is locked.
+#' @param lockFormatColumns If \code{TRUE} (default), formatting columns is locked.
+#' @param lockFormatRows If \code{TRUE} (default), formatting rows is locked.
+#' @param lockInsertColumns If \code{TRUE} (default), inserting columns is locked.
+#' @param lockInsertRows If \code{TRUE} (default), inserting rows is locked.
+#' @param lockInsertHyperlinks If \code{TRUE} (default), inserting hyperlinks is locked.
+#' @param lockDeleteColumns If \code{TRUE} (default), deleting columns is locked.
+#' @param lockDeleteRows If \code{TRUE} (default), deleting rows is locked.
+#' @param lockSort If \code{TRUE} (default), sorting is locked.
+#' @param lockAutoFilter If \code{TRUE} (default), auto filter changes are locked.
+#' @param lockPivotTables If \code{TRUE} (default), pivot table changes are locked.
+#' @param lockObjects If \code{FALSE} (default), objects are not locked.
+#' @param lockScenarios If \code{FALSE} (default), scenarios are not locked.
+#' @return invisible(0)
+#' @seealso \code{\link{unprotectWorksheet}}
+#' @export
+#' @examples
+#' wb <- createWorkbook()
+#' addWorksheet(wb, "Sheet 1")
+#' writeData(wb, "Sheet 1", iris)
+#'
+#' ## protect with password
+#' protectWorksheet(wb, "Sheet 1", password = "secret")
+#'
+#' ## protect without password
+#' protectWorksheet(wb, "Sheet 1")
+#'
+#' ## remove protection
+#' protectWorksheet(wb, "Sheet 1", protect = FALSE)
+protectWorksheet <- function(wb, sheet,
+                              protect = TRUE,
+                              password = NULL,
+                              lockSelectingLockedCells = TRUE,
+                              lockSelectingUnlockedCells = FALSE,
+                              lockFormatCells = TRUE,
+                              lockFormatColumns = TRUE,
+                              lockFormatRows = TRUE,
+                              lockInsertColumns = TRUE,
+                              lockInsertRows = TRUE,
+                              lockInsertHyperlinks = TRUE,
+                              lockDeleteColumns = TRUE,
+                              lockDeleteRows = TRUE,
+                              lockSort = TRUE,
+                              lockAutoFilter = TRUE,
+                              lockPivotTables = TRUE,
+                              lockObjects = FALSE,
+                              lockScenarios = FALSE) {
+  
+  if(!"Workbook" %in% class(wb))
+    stop("First argument must be a Workbook.")
+  
+  sheet <- wb$validateSheet(sheet)
+  
+  if(!protect) {
+    wb$worksheets[[sheet]]$sheetProtection <- character(0)
+    return(invisible(0))
+  }
+  
+  ## build attribute string
+  attrs <- sprintf('sheet="1" objects="%s" scenarios="%s"',
+                   as.integer(lockObjects),
+                   as.integer(lockScenarios))
+  
+  if(!lockSelectingLockedCells)
+    attrs <- paste0(attrs, ' selectLockedCells="1"')
+  
+  if(lockSelectingUnlockedCells)
+    attrs <- paste0(attrs, ' selectUnlockedCells="1"')
+  
+  bool_attrs <- c(
+    formatCells        = !lockFormatCells,
+    formatColumns      = !lockFormatColumns,
+    formatRows         = !lockFormatRows,
+    insertColumns      = !lockInsertColumns,
+    insertRows         = !lockInsertRows,
+    insertHyperlinks   = !lockInsertHyperlinks,
+    deleteColumns      = !lockDeleteColumns,
+    deleteRows         = !lockDeleteRows,
+    sort               = !lockSort,
+    autoFilter         = !lockAutoFilter,
+    pivotTables        = !lockPivotTables
+  )
+  
+  for(nm in names(bool_attrs)) {
+    if(bool_attrs[nm])
+      attrs <- paste0(attrs, sprintf(' %s="1"', nm))
+  }
+  
+  if(!is.null(password) && nchar(password) > 0) {
+    hash <- excel_password_hash(password)
+    attrs <- paste0(sprintf('password="%s" ', hash), attrs)
+  }
+  
+  wb$worksheets[[sheet]]$sheetProtection <- sprintf('<sheetProtection %s/>', attrs)
+  
+  invisible(0)
+}
+
+
+#' @name unprotectWorksheet
+#' @title Remove worksheet protection
+#' @description Remove protection from a worksheet. This is equivalent to
+#'   calling \code{protectWorksheet(wb, sheet, protect = FALSE)}.
+#' @param wb A Workbook object.
+#' @param sheet A name or index of a worksheet.
+#' @return invisible(0)
+#' @seealso \code{\link{protectWorksheet}}
+#' @export
+#' @examples
+#' wb <- createWorkbook()
+#' addWorksheet(wb, "Sheet 1")
+#' writeData(wb, "Sheet 1", iris)
+#' protectWorksheet(wb, "Sheet 1", password = "secret")
+#' unprotectWorksheet(wb, "Sheet 1")
+unprotectWorksheet <- function(wb, sheet) {
+  protectWorksheet(wb, sheet, protect = FALSE)
+}
+
+
+## Internal helper: compute Excel legacy password hash (16-bit XOR)
+## Uses a 15-bit left rotation with XOR per character (legacy Excel algorithm).
+excel_password_hash <- function(password) {
+  chars <- utf8ToInt(password)
+  hash <- 0L
+  for(ch in rev(chars)) {
+    ## 15-bit left rotate: move bit 14 to bit 0, shift remaining left by 1
+    hash <- bitwOr(bitwAnd(bitwShiftR(hash, 14L), 1L),
+                   bitwAnd(bitwShiftL(hash, 1L), 0x7FFFL))
+    hash <- bitwXor(hash, ch)
+  }
+  ## one final rotation, then XOR with length marker
+  hash <- bitwOr(bitwAnd(bitwShiftR(hash, 14L), 1L),
+                 bitwAnd(bitwShiftL(hash, 1L), 0x7FFFL))
+  hash <- bitwXor(hash, bitwOr(as.integer(nchar(password)), 0x8000L))
+  toupper(formatC(bitwAnd(hash, 0xFFFFL), width = 4L, flag = "0", format = "X"))
+}
